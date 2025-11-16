@@ -6,43 +6,25 @@
 
 - [Node.js](https://nodejs.org/) 18 or newer
 - npm (comes with Node)
-- Local session history:
-  - **Codex**: `~/.codex/history.jsonl` plus `~/.codex/sessions/**.jsonl`
-  - **Claude Code**: `~/.claude/history.jsonl` plus `~/.claude/projects/**.jsonl`
+- Your AI Agent
 
 ## Installation
 
 ```bash
-# with npm
-npm install
-npm run build
-npm link   # optional: expose the CLI globally
-
-# with pnpm
-pnpm install
-pnpm run build
-pnpm link --global
-```
-
-Thanks to the `prepare` script you can also install the tool globally in one shot:
-
-```bash
-npm install -g .
+npm install -g md-talk
 # or
-pnpm install -g .
+pnpm install -g md-talk
 ```
-
-Without linking you can call the local binary with `npx md-talk ...`, `pnpm dlx md-talk ...`, or run `npm run start -- <args>`.
 
 ## Usage
 
 ```bash
 # list recent sessions for an agent
-npx md-talk ls codex
-pnpm dlx md-talk ls claude
+md-talk ls codex
+md-talk ls claude
 
 # export a specific session
-npx md-talk codex <session-id> -o transcript.md --include-metadata "agent,session-id" --display-tool-output
+md-talk codex <session-id> -o transcript.md --include-metadata "agent,session-id" --display-tool-output
 
 # interactively choose a session (TTY only)
 md-talk claude -o claude.md        # if globally linked/installed
@@ -70,8 +52,10 @@ npm run dev -- claude <session-id> -o out.md
 # build the distributable CLI
 npm run build
 
-# run tests (if/when they exist)
+# run tests (future)
 npm run test
 ```
 
-The compiled CLI lives in `dist/`. `npm run build` must be executed before publishing or using `md-talk` outside of the repo (e.g., after `npm link`).
+## License
+
+AGPL-3 © Jel1yspot
