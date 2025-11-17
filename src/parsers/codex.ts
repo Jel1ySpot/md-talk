@@ -24,11 +24,312 @@ interface SessionAggregate {
   firstText?: string;
 }
 
-interface SessionRecord {
-  type?: string;
-  timestamp?: string;
-  payload?: Record<string, unknown>;
+interface MetadataPayload {
+  id: string;
+  timestamp: string;
+  cwd: string;
+  originator: string;
+  cli_version: string;
+  instructions: string | null;
+  source: string;
+  model_provider: string;
 }
+
+export interface GhostCommit {
+  id: string;
+  parent?: string;
+  preexisting_untracked_files: string[];
+  preexisting_untracked_dirs: string[];
+}
+
+export type Role = "assistant" | "user";
+
+export interface Annotations {
+  audience?: Role[];
+  lastModified?: string;
+  priority?: number;
+}
+
+export interface AudioContent {
+  annotations?: Annotations;
+  data: string;
+  mimeType: string;
+  type: "audio";
+}
+
+export interface TextContent {
+  annotations?: Annotations;
+  text: string;
+  type: "text";
+}
+
+
+export interface ImageContent {
+  annotations?: Annotations;
+  data: string;
+  mimeType: string;
+  type: "image";
+}
+
+
+export interface ResourceLink {
+  annotations?: Annotations;
+  description?: string;
+  mimeType?: string;
+  name: string;
+  size?: number;
+  title?: string;
+  type: "resource_link";
+  uri: string;
+}
+
+
+export interface TextResourceContents {
+  mimeType?: string;
+  text: string;
+  uri: string;
+}
+
+
+export interface BlobResourceContents {
+  blob: string;
+  mimeType?: string;
+  uri: string;
+}
+
+
+export type EmbeddedResourceResource =
+  | TextResourceContents
+  | BlobResourceContents;
+
+
+export interface EmbeddedResource {
+  annotations?: Annotations;
+  resource: EmbeddedResourceResource;
+  type: "resource"; // 假定 "resource"
+}
+
+export type ContentBlock =
+  | TextContent
+  | ImageContent
+  | AudioContent
+  | ResourceLink
+  | EmbeddedResource;
+
+export interface CallToolResult {
+  content: ContentBlock[];
+  isError?: boolean;
+  structuredContent?: any; // serde_json::Value
+}
+
+export type McpToolCallResult = { Ok: CallToolResult } | { Err: string };
+
+interface MetadataPayload {
+  id: string;
+  timestamp: string;
+  cwd: string;
+  originator: string;
+  cli_version: string;
+  instructions: string | null;
+  source: string;
+  model_provider: string;
+}
+
+interface InputTextItem {
+  type: "input_text";
+  text: string;
+}
+interface InputImageItem {
+  type: "input_image";
+  image_url: string;
+}
+interface OutputTextItem {
+  type: "output_text";
+  text: string;
+}
+export type ContentItem = InputTextItem | InputImageItem | OutputTextItem;
+
+interface FunctionCallOutputContentItemInputText {
+  type: "input_text";
+  text: string;
+}
+interface FunctionCallOutputContentItemInputImage {
+  type: "input_image";
+  image_url: string;
+}
+export type FunctionCallOutputContentItem =
+  | FunctionCallOutputContentItemInputText
+  | FunctionCallOutputContentItemInputImage;
+
+export interface FunctionCallOutputPayload {
+  content: string;
+  content_items?: FunctionCallOutputContentItem[];
+  success?: boolean;
+}
+
+interface ResponseInputItemMessage {
+  type: "message";
+  role: string;
+  content: ContentItem[];
+}
+interface ResponseInputItemFunctionCallOutput {
+  type: "function_call_output";
+  call_id: string;
+  output: FunctionCallOutputPayload;
+}
+interface ResponseInputItemMcpToolCallOutput {
+  type: "mcp_tool_call_output";
+  call_id: string;
+  result: McpToolCallResult;
+}
+interface ResponseInputItemCustomToolCallOutput {
+  type: "custom_tool_call_output";
+  call_id: string;
+  output: string;
+}
+export type ResponseInputItem =
+  | ResponseInputItemMessage
+  | ResponseInputItemFunctionCallOutput
+  | ResponseInputItemMcpToolCallOutput
+  | ResponseInputItemCustomToolCallOutput;
+
+export type LocalShellStatus = "completed" | "in_progress" | "incomplete";
+
+export interface LocalShellExecAction {
+  command: string[];
+  timeout_ms?: number;
+  working_directory?: string;
+  env?: Record<string, string>;
+  user?: string;
+}
+
+interface LocalShellActionExec {
+  type: "exec";
+  content: LocalShellExecAction;
+}
+export type LocalShellAction = LocalShellActionExec;
+
+interface WebSearchActionSearch {
+  type: "search";
+  query: string;
+}
+interface WebSearchActionOther {
+  type: string;
+}
+export type WebSearchAction = WebSearchActionSearch | WebSearchActionOther;
+
+interface ReasoningSummaryText {
+  type: "summary_text";
+  text: string;
+}
+export type ReasoningItemReasoningSummary = ReasoningSummaryText;
+
+interface ReasoningContentReasoningText {
+  type: "reasoning_text";
+  text: string;
+}
+interface ReasoningContentText {
+  type: "text";
+  text: string;
+}
+export type ReasoningItemContent =
+  | ReasoningContentReasoningText
+  | ReasoningContentText;
+
+interface ResponseItemMessage {
+  type: "message";
+  role: string;
+  content: ContentItem[];
+}
+interface ResponseItemReasoning {
+  type: "reasoning";
+  summary: ReasoningItemReasoningSummary[];
+  content?: ReasoningItemContent[];
+  encrypted_content?: string;
+}
+interface ResponseItemLocalShellCall {
+  type: "local_shell_call";
+  call_id?: string;
+  status: LocalShellStatus;
+  action: LocalShellAction;
+}
+interface ResponseItemFunctionCall {
+  type: "function_call";
+  name: string;
+  arguments: string;
+  call_id: string;
+}
+interface ResponseItemFunctionCallOutput {
+  type: "function_call_output";
+  call_id: string;
+  output: FunctionCallOutputPayload;
+}
+interface ResponseItemCustomToolCall {
+  type: "custom_tool_call";
+  status?: string;
+  call_id: string;
+  name: string;
+  input: string;
+}
+interface ResponseItemCustomToolCallOutput {
+  type: "custom_tool_call_output";
+  call_id: string;
+  output: string;
+}
+interface ResponseItemWebSearchCall {
+  type: "web_search_call";
+  status?: string;
+  action: WebSearchAction;
+}
+interface ResponseItemGhostSnapshot {
+  type: "ghost_snapshot";
+  ghost_commit: GhostCommit;
+}
+interface ResponseItemOther {
+  type: string;
+}
+export type ResponseItem =
+  | ResponseItemMessage
+  | ResponseItemReasoning
+  | ResponseItemLocalShellCall
+  | ResponseItemFunctionCall
+  | ResponseItemFunctionCallOutput
+  | ResponseItemCustomToolCall
+  | ResponseItemCustomToolCallOutput
+  | ResponseItemWebSearchCall
+  | ResponseItemGhostSnapshot
+  | ResponseItemOther;
+
+interface SessionRecordSessionMeta {
+  timestamp: string;
+  type: "session_meta";
+  payload: MetadataPayload;
+}
+
+interface SessionRecordResponseItem {
+  timestamp: string;
+  type: "response_item";
+  payload: ResponseItem;
+}
+
+interface SessionRecordEventMsg {
+  timestamp: string;
+  type: "event_msg";
+  payload: unknown;
+}
+
+interface SessionRecordTurnContext {
+  timestamp: string;
+  type: "turn_context";
+  payload: unknown;
+}
+
+
+export type SessionRecord =
+  | SessionRecordSessionMeta
+  | SessionRecordResponseItem
+  | SessionRecordEventMsg
+  | SessionRecordTurnContext;
 
 const cleanSnippet = (value?: string): string | undefined => {
   if (!value) return undefined;
@@ -417,7 +718,7 @@ export class CodexParser implements AgentParser {
         continue;
       }
 
-      const payload = record.payload as Record<string, unknown>;
+      const payload = record.payload;
       const recordTimestamp = record.timestamp ? new Date(record.timestamp) : undefined;
       if (recordTimestamp && !Number.isNaN(recordTimestamp.getTime())) {
         if (!startedAt) startedAt = recordTimestamp;
