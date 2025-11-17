@@ -1,6 +1,6 @@
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { promises as fs } from "fs";
+import { homedir } from "os";
+import { basename, join } from "path";
 
 import type { AgentParser, SessionData, SessionMessage, SessionSummary } from "../types";
 
@@ -148,7 +148,7 @@ export class ClaudeCodeParser implements AgentParser {
 
     let contents = "";
     try {
-      contents = await readFile(this.historyFile, "utf8");
+      contents = await fs.readFile(this.historyFile, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         this.historyCache = new Map();
@@ -198,7 +198,7 @@ export class ClaudeCodeParser implements AgentParser {
   private async parseSessionFile(sessionPath: string, aggregate: HistoryAggregate) {
     let contents = "";
     try {
-      contents = await readFile(sessionPath, "utf8");
+      contents = await fs.readFile(sessionPath, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         return { messages: [] as SessionMessage[], startedAt: undefined as Date | undefined, endedAt: undefined as Date | undefined };

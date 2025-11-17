@@ -1,6 +1,6 @@
-import { readdir, readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { promises as fs } from "fs";
+import { homedir } from "os";
+import { basename, join } from "path";
 
 import type { AgentParser, SessionData, SessionMessage, SessionSummary } from "../types";
 
@@ -551,7 +551,7 @@ export class CodexParser implements AgentParser {
 
     let contents = "";
     try {
-      contents = await readFile(this.historyFile, "utf8");
+      contents = await fs.readFile(this.historyFile, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         this.historyCache = new Map();
@@ -585,7 +585,7 @@ export class CodexParser implements AgentParser {
       const current = queue.shift()!;
       let entries;
       try {
-        entries = await readdir(current, { withFileTypes: true });
+        entries = await fs.readdir(current, { withFileTypes: true });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") {
           continue;
@@ -691,7 +691,7 @@ export class CodexParser implements AgentParser {
   ): Promise<SessionData> {
     let contents = "";
     try {
-      contents = await readFile(sessionPath, "utf8");
+      contents = await fs.readFile(sessionPath, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         return {

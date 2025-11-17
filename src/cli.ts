@@ -1,8 +1,8 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { stdin, stdout } from "node:process";
-import { createInterface } from "node:readline/promises";
-import { parseArgs } from "node:util";
+import { promises as fs } from "fs";
+import { resolve } from "path";
+import { stdin, stdout } from "process";
+import readline from "readline";
+import { parseArgs } from "util";
 
 import { renderSessionMarkdown } from "./markdown";
 import { ClaudeCodeParser } from "./parsers/claudeCode";
@@ -152,10 +152,14 @@ const promptForSession = async (sessions: SessionSummary[]): Promise<SessionSumm
     console.log(`[${index}] ${session.title} — ${started} — ${meta}`);
   });
 
-  const rl = createInterface({ input: stdin, output: stdout });
+  const rl = readline.createInterface({ input: stdin, output: stdout });
+  const ask = (query: string) =>
+    new Promise<string>((resolve) => {
+      rl.question(query, resolve);
+    });
   try {
     while (true) {
-      const response = await rl.question("Select a session number: ");
+      const response = await ask("Select a session number: ");
       const index = Number.parseInt(response, 10);
       if (!Number.isNaN(index) && sessions[index]) {
         return sessions[index];
@@ -173,7 +177,7 @@ export const runCli = async (argv: string[]) => {
 
   if (args.type === "export" && args.inputFile) {
     const inputPath = resolve(process.cwd(), args.inputFile);
-    const content = await readFile(inputPath, "utf8");
+    const content = await fs.readFile(inputPath, "utf8");
     const session = parser.parseSession(content, inputPath);
     const markdown = renderSessionMarkdown(session, {
       includeMetadataFields: args.metadataFields,
@@ -181,7 +185,7 @@ export const runCli = async (argv: string[]) => {
       title: args.title,
     });
     const outputFile = resolve(process.cwd(), args.outputPath);
-    await writeFile(outputFile, markdown, "utf8");
+    await fs.writeFile(outputFile, markdown, "utf8");
     console.log(`Session exported to ${outputFile}`);
     return;
   }
@@ -219,6 +223,6 @@ export const runCli = async (argv: string[]) => {
     title: args.title,
   });
   const outputFile = resolve(process.cwd(), args.outputPath);
-  await writeFile(outputFile, markdown, "utf8");
+  await fs.writeFile(outputFile, markdown, "utf8");
   console.log(`Session exported to ${outputFile}`);
 };
