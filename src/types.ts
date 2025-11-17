@@ -40,4 +40,6 @@ export interface AgentParser {
   readonly agent: string;
   listSessions(): Promise<SessionSummary[]>;
   loadSession(summary: SessionSummary): Promise<SessionData>;
+  parseHistory(content: string, sourcePath?: string): SessionSummary[];
+  parseSession(content: string, sourcePath?: string): SessionData;
 }

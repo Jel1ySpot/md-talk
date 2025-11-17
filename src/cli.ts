@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
@@ -19,6 +19,7 @@ type CliCommand =
       metadataFields: string[];
       showToolOutput: boolean;
       title?: string;
+      inputFile?: string;
     };
 
 const defaultMetadataFields = ["agent", "session-id", "started-time", "cwd"];
@@ -40,6 +41,7 @@ const usage = `Usage:\n` +
   `Options:\n` +
   `  -o, --out <file>          Target markdown path (required for export)\n` +
   `  -s, --session <id>        Session id (optional, falls back to interactive selection)\n` +
+  `  -i, --input-file <file>   Export this JSONL session file directly\n` +
   `      --include-metadata    Comma-separated list of metadata fields for the report\n` +
   `      --display-tool-output Include tool outputs in the conversation log\n` +
   `  -t, --title <text>        Override the markdown document title\n` +
@@ -53,6 +55,7 @@ const parseCliArgs = (argv: string[]): CliCommand => {
       session: { type: "string", short: "s" },
       out: { type: "string", short: "o" },
       title: { type: "string", short: "t" },
+      "input-file": { type: "string", short: "i" },
       "include-metadata": { type: "string" },
       "display-tool-output": { type: "boolean" },
       help: { type: "boolean", short: "h" },
@@ -85,6 +88,7 @@ const parseCliArgs = (argv: string[]): CliCommand => {
   const sessionId = values.session ?? second;
   const outputPath = values.out;
   const title = values.title;
+  const inputFile = values["input-file"];
   if (!outputPath) {
     console.error("Please provide an output path using -o <file>.\n");
     console.error(usage);
@@ -99,6 +103,7 @@ const parseCliArgs = (argv: string[]): CliCommand => {
     metadataFields,
     showToolOutput,
     title,
+    inputFile,
   };
 };
 
@@ -170,6 +175,22 @@ const promptForSession = async (sessions: SessionSummary[]): Promise<SessionSumm
 export const runCli = async (argv: string[]) => {
   const args = parseCliArgs(argv);
   const parser = resolveParser(args.agent);
+
+  if (args.type === "export" && args.inputFile) {
+    const inputPath = resolve(process.cwd(), args.inputFile);
+    const content = await readFile(inputPath, "utf8");
+    const session = parser.parseSession(content, inputPath);
+    const markdown = renderSessionMarkdown(session, {
+      includeMetadataFields: args.metadataFields,
+      displayToolOutput: args.showToolOutput,
+      title: args.title,
+    });
+    const outputFile = resolve(process.cwd(), args.outputPath);
+    await writeFile(outputFile, markdown, "utf8");
+    console.log(`Session exported to ${outputFile}`);
+    return;
+  }
+
   const sessions = await parser.listSessions();
 
   if (!sessions.length) {

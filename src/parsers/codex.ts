@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import type { AgentParser, SessionData, SessionMessage, SessionSummary } from "../types";
 
@@ -488,27 +488,24 @@ export class CodexParser implements AgentParser {
     this.sessionsRoot = options.sessionsRoot ?? join(codexDir, "sessions");
   }
 
+  parseHistory(content: string, sourcePath?: string): SessionSummary[] {
+    const aggregates = this.parseHistoryContent(content);
+    return this.buildSummariesFromAggregates(aggregates, sourcePath ?? this.historyFile);
+  }
+
+  parseSession(content: string, sourcePath?: string): SessionData {
+    const id = this.deriveSessionId(sourcePath);
+    const summary: SessionSummary = { id, title: id };
+    const metadata: Record<string, string> = {};
+    if (sourcePath) {
+      metadata.sessionFile = sourcePath;
+    }
+    return this.parseSessionContent(summary, content, metadata);
+  }
+
   async listSessions(): Promise<SessionSummary[]> {
     const aggregates = await this.loadHistory();
-    const summaries: SessionSummary[] = [];
-    for (const aggregate of aggregates.values()) {
-      const firstLine = aggregate.entries[0];
-      summaries.push({
-        id: aggregate.id,
-        title: cleanSnippet(aggregate.firstText) ?? aggregate.id,
-        description: cleanSnippet(aggregate.firstText),
-        startedAt: aggregate.startedAt,
-        endedAt: aggregate.endedAt,
-        messageCount: aggregate.entries.length,
-        sourcePath: firstLine ? `${this.historyFile}#${firstLine.line}` : this.historyFile,
-      });
-    }
-    summaries.sort((a, b) => {
-      const left = a.startedAt?.getTime() ?? 0;
-      const right = b.startedAt?.getTime() ?? 0;
-      return right - left;
-    });
-    return summaries;
+    return this.buildSummariesFromAggregates(aggregates, this.historyFile);
   }
 
   async loadSession(summary: SessionSummary): Promise<SessionData> {
@@ -563,44 +560,7 @@ export class CodexParser implements AgentParser {
       throw error;
     }
 
-    const map = new Map<string, SessionAggregate>();
-    const lines = contents.split(/\r?\n/);
-    lines.forEach((line, index) => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
-      try {
-        const payload = JSON.parse(trimmed) as { session_id?: string; ts?: number; text?: string };
-        if (!payload.session_id || typeof payload.text !== "string") {
-          return;
-        }
-        const aggregate = map.get(payload.session_id) ?? {
-          id: payload.session_id,
-          entries: [],
-        };
-        const timestamp = toDateFromSeconds(payload.ts);
-        const entry: HistoryEntry = {
-          sessionId: payload.session_id,
-          line: index + 1,
-          timestamp,
-          text: payload.text,
-        };
-        aggregate.entries.push(entry);
-        if (timestamp) {
-          if (!aggregate.startedAt || timestamp < aggregate.startedAt) {
-            aggregate.startedAt = timestamp;
-          }
-          if (!aggregate.endedAt || timestamp > aggregate.endedAt) {
-            aggregate.endedAt = timestamp;
-          }
-        }
-        if (!aggregate.firstText) {
-          aggregate.firstText = payload.text;
-        }
-        map.set(payload.session_id, aggregate);
-      } catch {
-        // ignore malformed lines
-      }
-    });
+    const map = this.parseHistoryContent(contents);
     this.historyCache = map;
     return map;
   }
@@ -650,6 +610,80 @@ export class CodexParser implements AgentParser {
     return undefined;
   }
 
+  private deriveSessionId(inputFile?: string): string {
+    if (!inputFile) return "session";
+    const file = basename(inputFile);
+    const trimmed = file.replace(/\.jsonl$/i, "");
+    return trimmed || file || "session";
+  }
+
+  private parseHistoryContent(contents: string): Map<string, SessionAggregate> {
+    const map = new Map<string, SessionAggregate>();
+    const lines = contents.split(/\r?\n/);
+    lines.forEach((line, index) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      try {
+        const payload = JSON.parse(trimmed) as { session_id?: string; ts?: number; text?: string };
+        if (!payload.session_id || typeof payload.text !== "string") {
+          return;
+        }
+        const aggregate = map.get(payload.session_id) ?? {
+          id: payload.session_id,
+          entries: [],
+        };
+        const timestamp = toDateFromSeconds(payload.ts);
+        const entry: HistoryEntry = {
+          sessionId: payload.session_id,
+          line: index + 1,
+          timestamp,
+          text: payload.text,
+        };
+        aggregate.entries.push(entry);
+        if (timestamp) {
+          if (!aggregate.startedAt || timestamp < aggregate.startedAt) {
+            aggregate.startedAt = timestamp;
+          }
+          if (!aggregate.endedAt || timestamp > aggregate.endedAt) {
+            aggregate.endedAt = timestamp;
+          }
+        }
+        if (!aggregate.firstText) {
+          aggregate.firstText = payload.text;
+        }
+        map.set(payload.session_id, aggregate);
+      } catch {
+        // ignore malformed lines
+      }
+    });
+    return map;
+  }
+
+  private buildSummariesFromAggregates(
+    aggregates: Map<string, SessionAggregate>,
+    sourcePath?: string,
+  ): SessionSummary[] {
+    const summaries: SessionSummary[] = [];
+    for (const aggregate of aggregates.values()) {
+      const firstLine = aggregate.entries[0];
+      summaries.push({
+        id: aggregate.id,
+        title: cleanSnippet(aggregate.firstText) ?? aggregate.id,
+        description: cleanSnippet(aggregate.firstText),
+        startedAt: aggregate.startedAt,
+        endedAt: aggregate.endedAt,
+        messageCount: aggregate.entries.length,
+        sourcePath: firstLine ? `${sourcePath ?? ""}#${firstLine.line}` : sourcePath,
+      });
+    }
+    summaries.sort((a, b) => {
+      const left = a.startedAt?.getTime() ?? 0;
+      const right = b.startedAt?.getTime() ?? 0;
+      return right - left;
+    });
+    return summaries;
+  }
+
   private async parseSessionFile(
     summary: SessionSummary,
     sessionPath: string,
@@ -673,6 +707,14 @@ export class CodexParser implements AgentParser {
       throw error;
     }
 
+    return this.parseSessionContent(summary, contents, metadata);
+  }
+
+  private parseSessionContent(
+    summary: SessionSummary,
+    contents: string,
+    metadata: Record<string, string>,
+  ): SessionData {
     const messages: SessionMessage[] = [];
     let startedAt = summary.startedAt;
     let endedAt = summary.endedAt;

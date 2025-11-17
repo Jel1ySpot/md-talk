@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import type { AgentParser, SessionData, SessionMessage, SessionSummary } from "../types";
 
@@ -73,28 +73,34 @@ export class ClaudeCodeParser implements AgentParser {
     this.projectsRoot = options.projectsRoot ?? join(claudeDir, "projects");
   }
 
+  parseHistory(content: string, sourcePath?: string): SessionSummary[] {
+    const aggregates = this.parseHistoryContent(content);
+    return this.buildSummariesFromAggregates(aggregates, sourcePath ?? this.historyFile);
+  }
+
+  parseSession(content: string, sourcePath?: string): SessionData {
+    const id = this.deriveSessionId(sourcePath);
+    const aggregate: HistoryAggregate = { id, previews: [], entryCount: 0 };
+    const { messages, startedAt, endedAt } = this.parseSessionContent(content, aggregate);
+    const title = messages[0]?.content ?? id;
+    const metadata: Record<string, string> = {};
+    if (sourcePath) {
+      metadata.sessionFile = sourcePath;
+    }
+    return {
+      id,
+      agent: this.agent,
+      title,
+      startedAt,
+      endedAt,
+      metadata,
+      messages,
+    };
+  }
+
   async listSessions(): Promise<SessionSummary[]> {
     const aggregates = await this.loadHistory();
-    const summaries: SessionSummary[] = [];
-    for (const aggregate of aggregates.values()) {
-      const title = aggregate.previews[0] ?? aggregate.id;
-      summaries.push({
-        id: aggregate.id,
-        title,
-        description: aggregate.previews.slice(0, 3).join(" "),
-        startedAt: aggregate.startedAt,
-        endedAt: aggregate.endedAt,
-        messageCount: aggregate.entryCount,
-        sourcePath: this.buildSessionPath(aggregate) ?? undefined,
-      });
-    }
-
-    summaries.sort((a, b) => {
-      const left = a.startedAt?.getTime() ?? 0;
-      const right = b.startedAt?.getTime() ?? 0;
-      return right - left;
-    });
-    return summaries;
+    return this.buildSummariesFromAggregates(aggregates);
   }
 
   async loadSession(summary: SessionSummary): Promise<SessionData> {
@@ -151,45 +157,42 @@ export class ClaudeCodeParser implements AgentParser {
       throw error;
     }
 
-    const map = new Map<string, HistoryAggregate>();
-    const lines = contents.split(/\r?\n/);
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      let payload: HistoryRow;
-      try {
-        payload = JSON.parse(trimmed) as HistoryRow;
-      } catch {
-        continue;
-      }
-      if (!payload.sessionId) continue;
-      const aggregate = map.get(payload.sessionId) ?? {
-        id: payload.sessionId,
-        previews: [],
-        entryCount: 0,
-      };
-      aggregate.entryCount += 1;
-      if (payload.project && !aggregate.projectPath) {
-        aggregate.projectPath = payload.project;
-        aggregate.projectDir = this.sanitizeProjectPath(payload.project);
-      }
-      if (payload.display && !aggregate.previews.includes(payload.display)) {
-        aggregate.previews.push(payload.display);
-      }
-      const timestamp = this.toDate(payload.timestamp);
-      if (timestamp) {
-        if (!aggregate.startedAt || timestamp < aggregate.startedAt) {
-          aggregate.startedAt = timestamp;
-        }
-        if (!aggregate.endedAt || timestamp > aggregate.endedAt) {
-          aggregate.endedAt = timestamp;
-        }
-      }
-      map.set(payload.sessionId, aggregate);
-    }
-
+    const map = this.parseHistoryContent(contents);
     this.historyCache = map;
     return map;
+  }
+
+  private deriveSessionId(inputFile?: string): string {
+    if (!inputFile) return "session";
+    const file = basename(inputFile);
+    const trimmed = file.replace(/\.jsonl$/i, "");
+    return trimmed || file || "session";
+  }
+
+  private buildSummariesFromAggregates(
+    aggregates: Map<string, HistoryAggregate>,
+    sourcePath?: string,
+  ): SessionSummary[] {
+    const summaries: SessionSummary[] = [];
+    for (const aggregate of aggregates.values()) {
+      const title = aggregate.previews[0] ?? aggregate.id;
+      summaries.push({
+        id: aggregate.id,
+        title,
+        description: aggregate.previews.slice(0, 3).join(" "),
+        startedAt: aggregate.startedAt,
+        endedAt: aggregate.endedAt,
+        messageCount: aggregate.entryCount,
+        sourcePath,
+      });
+    }
+
+    summaries.sort((a, b) => {
+      const left = a.startedAt?.getTime() ?? 0;
+      const right = b.startedAt?.getTime() ?? 0;
+      return right - left;
+    });
+    return summaries;
   }
 
   private async parseSessionFile(sessionPath: string, aggregate: HistoryAggregate) {
@@ -203,6 +206,13 @@ export class ClaudeCodeParser implements AgentParser {
       throw error;
     }
 
+    return this.parseSessionContent(contents, aggregate);
+  }
+
+  private parseSessionContent(
+    contents: string,
+    aggregate: HistoryAggregate,
+  ): { messages: SessionMessage[]; startedAt?: Date; endedAt?: Date } {
     const lines = contents.split(/\r?\n/);
     const messages: SessionMessage[] = [];
     let startedAt: Date | undefined;
@@ -290,6 +300,46 @@ export class ClaudeCodeParser implements AgentParser {
     }
 
     return { messages, startedAt, endedAt };
+  }
+
+  private parseHistoryContent(contents: string): Map<string, HistoryAggregate> {
+    const map = new Map<string, HistoryAggregate>();
+    const lines = contents.split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let payload: HistoryRow;
+      try {
+        payload = JSON.parse(trimmed) as HistoryRow;
+      } catch {
+        continue;
+      }
+      if (!payload.sessionId) continue;
+      const aggregate = map.get(payload.sessionId) ?? {
+        id: payload.sessionId,
+        previews: [],
+        entryCount: 0,
+      };
+      aggregate.entryCount += 1;
+      if (payload.project && !aggregate.projectPath) {
+        aggregate.projectPath = payload.project;
+        aggregate.projectDir = this.sanitizeProjectPath(payload.project);
+      }
+      if (payload.display && !aggregate.previews.includes(payload.display)) {
+        aggregate.previews.push(payload.display);
+      }
+      const timestamp = this.toDate(payload.timestamp);
+      if (timestamp) {
+        if (!aggregate.startedAt || timestamp < aggregate.startedAt) {
+          aggregate.startedAt = timestamp;
+        }
+        if (!aggregate.endedAt || timestamp > aggregate.endedAt) {
+          aggregate.endedAt = timestamp;
+        }
+      }
+      map.set(payload.sessionId, aggregate);
+    }
+    return map;
   }
 
   private buildSessionPath(aggregate?: HistoryAggregate): string | undefined {
