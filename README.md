@@ -38,6 +38,7 @@ md-talk claude -o claude.md        # if globally linked/installed
 | `ls <agent>` | Prints recent sessions with timestamps and counts |
 | `-o, --out <file>` | Target Markdown file (required for exports) |
 | `-s, --session <id>` | Skip interactive picker and load this session id |
+| `-t, --title <text>` | Override the Markdown document title |
 | `--include-metadata "agent,session-id,..."` | Comma-separated metadata fields to show at the top of the document |
 | `--display-tool-output` | Include tool stdout/stderr blocks in the conversation |
 

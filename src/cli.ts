@@ -18,6 +18,7 @@ type CliCommand =
       sessionId?: string;
       metadataFields: string[];
       showToolOutput: boolean;
+      title?: string;
     };
 
 const defaultMetadataFields = ["agent", "session-id", "started-time", "cwd"];
@@ -41,6 +42,7 @@ const usage = `Usage:\n` +
   `  -s, --session <id>        Session id (optional, falls back to interactive selection)\n` +
   `      --include-metadata    Comma-separated list of metadata fields for the report\n` +
   `      --display-tool-output Include tool outputs in the conversation log\n` +
+  `  -t, --title <text>        Override the markdown document title\n` +
   `  -h, --help                Show this help message\n`;
 
 const parseCliArgs = (argv: string[]): CliCommand => {
@@ -50,6 +52,7 @@ const parseCliArgs = (argv: string[]): CliCommand => {
     options: {
       session: { type: "string", short: "s" },
       out: { type: "string", short: "o" },
+      title: { type: "string", short: "t" },
       "include-metadata": { type: "string" },
       "display-tool-output": { type: "boolean" },
       help: { type: "boolean", short: "h" },
@@ -81,6 +84,7 @@ const parseCliArgs = (argv: string[]): CliCommand => {
   const agentName = first.toLowerCase();
   const sessionId = values.session ?? second;
   const outputPath = values.out;
+  const title = values.title;
   if (!outputPath) {
     console.error("Please provide an output path using -o <file>.\n");
     console.error(usage);
@@ -94,6 +98,7 @@ const parseCliArgs = (argv: string[]): CliCommand => {
     sessionId,
     metadataFields,
     showToolOutput,
+    title,
   };
 };
 
@@ -195,6 +200,7 @@ export const runCli = async (argv: string[]) => {
   const markdown = renderSessionMarkdown(session, {
     includeMetadataFields: args.metadataFields,
     displayToolOutput: args.showToolOutput,
+    title: args.title,
   });
   const outputFile = resolve(process.cwd(), args.outputPath);
   await writeFile(outputFile, markdown, "utf8");

@@ -3,6 +3,7 @@ import type { SessionData, SessionMessage } from "./types";
 interface RenderOptions {
   includeMetadataFields?: string[];
   displayToolOutput?: boolean;
+  title?: string;
 }
 
 const formatDate = (value?: Date) => (value ? value.toISOString() : undefined);
@@ -41,7 +42,7 @@ export const renderSessionMarkdown = (
   options: RenderOptions = {},
 ): string => {
   const lines: string[] = [];
-  const title = session.title || `Session ${session.id}`;
+  const title = options.title?.trim() || session.title || `Session ${session.id}`;
   const includeFields =
     options.includeMetadataFields && options.includeMetadataFields.length
       ? options.includeMetadataFields
