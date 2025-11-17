@@ -33,11 +33,11 @@ const parseMetadataFields = (raw?: string): string[] => {
 };
 
 const usage = `Usage:\n` +
-  `  md-talk ls <agent>\n` +
+  `  md-talk <agent> ls\n` +
   `  md-talk <agent> [session-id] -o <output.md>\n\n` +
   `Examples:\n` +
-  `  md-talk ls codex\n` +
-  `  md-talk codex 019a5895-7e77-7073-94e7-6a483d20ec60 -o main.md\n\n` +
+  `  md-talk codex ls\n` +
+  `  md-talk codex 5f6c2c3e-4a1b-4b6e-8d2f-91d6424e7c83 -o session.md\n\n` +
   `Options:\n` +
   `  -o, --out <file>          Target markdown path (required for export)\n` +
   `  -s, --session <id>        Session id (optional, falls back to interactive selection)\n` +
@@ -75,16 +75,11 @@ const parseCliArgs = (argv: string[]): CliCommand => {
     process.exit(1);
   }
 
-  if (first === "ls" || first === "list") {
-    if (!second) {
-      console.error("Please provide an agent name to list sessions.\n");
-      console.error(usage);
-      process.exit(1);
-    }
-    return { type: "list", agent: second.toLowerCase(), metadataFields, showToolOutput };
+  const agentName = first.toLowerCase();
+  if (second === "ls" || second === "list") {
+    return { type: "list", agent: agentName, metadataFields, showToolOutput };
   }
 
-  const agentName = first.toLowerCase();
   const sessionId = values.session ?? second;
   const outputPath = values.out;
   const title = values.title;

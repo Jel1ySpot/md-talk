@@ -20,8 +20,8 @@ pnpm install -g md-talk
 
 ```bash
 # list recent sessions for an agent
-md-talk ls codex
-md-talk ls claude
+md-talk codex ls
+md-talk claude ls
 
 # export a specific session
 md-talk codex <session-id> -o transcript.md --include-metadata "agent,session-id" --display-tool-output
