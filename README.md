@@ -32,10 +32,14 @@ md-talk claude -o claude.md        # if globally linked/installed
 
 ### Options
 
+```bash
+md-talk <agent> [command] [options...]
+```
+
 | Option | Description |
 | --- | --- |
 | `<agent>` | Supported aliases: `codex`, `claude`, `claude-code` |
-| `ls <agent>` | Prints recent sessions with timestamps and counts |
+| `ls` | Prints recent sessions with timestamps and counts |
 | `-o, --out <file>` | Target Markdown file (required for exports) |
 | `-s, --session <id>` | Skip interactive picker and load this session id |
 | `-i, --input-file <file>` | Export a specific JSONL session file directly |
