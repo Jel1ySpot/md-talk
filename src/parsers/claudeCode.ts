@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import { homedir } from "os";
 import { basename, join } from "path";
+import {Anthropic} from "@anthropic-ai/sdk/client";
 
 import type { AgentParser, SessionData, SessionMessage, SessionSummary } from "../types";
 
@@ -26,27 +27,156 @@ interface HistoryAggregate {
   entryCount: number;
 }
 
-interface RawSessionRecord {
-  type?: string;
-  message?: ClaudeMessage;
+export interface TodoItem {
+  id: string;
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+  priority: "high" | "medium" | "low";
 }
 
-interface ClaudeMessage {
-  role?: string;
-  content?: string | ClaudeContent[];
+export interface TextContent {
+  type: "text";
+  text: string;
 }
 
-interface ClaudeContent {
-  type?: string;
-  text?: string;
-  id?: string;
-  name?: string;
-  input?: Record<string, unknown>;
-  content?: unknown;
-  is_error?: boolean;
-  tool_use_id?: string;
-  thinking?: string;
+export interface ToolUseContent {
+  type: "tool_use";
+  id: string;
+  name: string;
+  input: Record<string, any>;
 }
+
+export interface ToolResultContent {
+  type: "tool_result";
+  tool_use_id: string;
+  content: string | Record<string, any>[];
+  is_error?: boolean | null;
+}
+
+export interface ThinkingContent {
+  type: "thinking";
+  thinking: string;
+  signature?: string | null;
+}
+
+export interface ImageSource {
+  type: "base64";
+  media_type: string;
+  data: string;
+}
+
+export interface ImageContent {
+  type: "image";
+  source: ImageSource;
+}
+
+export type ContentItem =
+  | TextContent
+  | ToolUseContent
+  | ToolResultContent
+  | ThinkingContent
+  | ImageContent
+  | Anthropic.ContentBlock;
+
+export interface UserMessage {
+  role: "user";
+  content: string | ContentItem[];
+}
+
+export interface FileInfo {
+  filePath: string;
+  content: string;
+  numLines: number;
+  startLine: number;
+  totalLines: number;
+}
+
+export interface FileReadResult {
+  type: "text";
+  file: FileInfo;
+}
+
+export interface CommandResult {
+  stdout: string;
+  stderr: string;
+  interrupted: boolean;
+  isImage: boolean;
+}
+
+export interface TodoResult {
+  oldTodos: TodoItem[];
+  newTodos: TodoItem[];
+}
+
+export interface EditResult {
+  oldString?: string | null;
+  newString?: string | null;
+  replaceAll?: boolean | null;
+  originalFile?: string | null;
+  structuredPatch?: any | null;
+  userModified?: boolean | null;
+}
+
+export type ToolUseResult =
+  | string
+  | TodoItem[]
+  | FileReadResult
+  | CommandResult
+  | TodoResult
+  | EditResult
+  | ContentItem[];
+
+export interface BaseTranscriptEntry {
+  parentUuid?: string | null;
+  isSidechain: boolean;
+  userType: string;
+  cwd: string;
+  sessionId: string;
+  version: string;
+  uuid: string;
+  timestamp: string;
+  isMeta?: boolean | null;
+}
+
+export interface UserTranscriptEntry extends BaseTranscriptEntry {
+  type: "user";
+  message: UserMessage;
+  toolUseResult?: ToolUseResult | null;
+}
+
+export interface AssistantTranscriptEntry extends BaseTranscriptEntry {
+  type: "assistant";
+  message: Anthropic.Message;
+  requestId?: string | null;
+}
+
+export interface SummaryTranscriptEntry {
+  type: "summary";
+  summary: string;
+  leafUuid: string;
+  cwd?: string | null;
+}
+
+export interface SystemTranscriptEntry extends BaseTranscriptEntry {
+  type: "system";
+  content: string;
+  level?: string | null; // e.g., "warning", "info", "error"
+}
+
+export interface QueueOperationTranscriptEntry {
+  type: "queue-operation";
+  operation: "enqueue" | "dequeue";
+  timestamp: string;
+  sessionId: string;
+  content?: ContentItem[] | null;
+}
+
+export type SessionRecord =
+  | UserTranscriptEntry
+  | AssistantTranscriptEntry
+  | SummaryTranscriptEntry
+  | SystemTranscriptEntry
+  | QueueOperationTranscriptEntry;
 
 interface ToolUseFormatResult {
   text: string;
@@ -221,14 +351,14 @@ export class ClaudeCodeParser implements AgentParser {
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
-      let record: RawSessionRecord;
+      let record: SessionRecord;
       try {
-        record = JSON.parse(trimmed) as RawSessionRecord;
+        record = JSON.parse(trimmed) as SessionRecord;
       } catch {
         continue;
       }
 
-      if (!record || !record.type || !record.message) {
+      if (!record || !record.type) {
         continue;
       }
 
@@ -276,7 +406,7 @@ export class ClaudeCodeParser implements AgentParser {
         }
         if (entry.type === "tool_use") {
           flushText();
-          const formatted = this.formatToolUse(entry);
+          const formatted = this.formatToolUse(entry as ToolUseContent);
           messages.push({
             role: "assistant",
             content: formatted.text,
@@ -289,7 +419,7 @@ export class ClaudeCodeParser implements AgentParser {
         }
         if (entry.type === "tool_result") {
           flushText();
-          const output = this.formatToolResult(entry);
+          const output = this.formatToolResult(entry as ToolResultContent);
           if (output) {
             messages.push({ role: "tool", content: output, type: "tool-output", timestamp });
           }
@@ -369,7 +499,7 @@ export class ClaudeCodeParser implements AgentParser {
     return Number.isNaN(date.getTime()) ? undefined : date;
   }
 
-  private normalizeContent(content?: string | ClaudeContent[]): ClaudeContent[] {
+  private normalizeContent(content?: string | ContentItem[]): ContentItem[] {
     if (!content) return [];
     if (typeof content === "string") {
       return [{ type: "text", text: content }];
@@ -380,7 +510,7 @@ export class ClaudeCodeParser implements AgentParser {
     return [];
   }
 
-  private formatToolUse(entry: ClaudeContent): ToolUseFormatResult {
+  private formatToolUse(entry: ToolUseContent): ToolUseFormatResult {
     const toolName = entry.name ?? "tool";
     const inputString = entry.input && Object.keys(entry.input).length ? JSON.stringify(entry.input) : "";
     const lower = toolName.toLowerCase();
@@ -432,7 +562,7 @@ export class ClaudeCodeParser implements AgentParser {
     return JSON.stringify({ path, content });
   }
 
-  private formatToolResult(entry: ClaudeContent): string {
+  private formatToolResult(entry: ToolResultContent): string {
     const { content } = entry;
     if (typeof content === "string") {
       return content;
